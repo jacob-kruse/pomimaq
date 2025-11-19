@@ -1,8 +1,6 @@
 import os
 from typing import Optional
-
 import numpy as np
-
 import gymnasium as gym
 from gymnasium import spaces
 from gymnasium.error import DependencyNotInstalled
@@ -117,7 +115,9 @@ class BlackjackEnv(gym.Env):
 
     def __init__(self, render_mode: Optional[str] = None, natural=False, sab=False):
         self.action_space = spaces.Discrete(2)
-        self.observation_space = spaces.Tuple((spaces.Discrete(32), spaces.Discrete(11), spaces.Discrete(2)))
+        self.observation_space = spaces.Tuple(
+            (spaces.Discrete(32), spaces.Discrete(11), spaces.Discrete(2))
+        )
 
         # Flag to payout 1.5 on a "natural" blackjack win, like casino rules
         # Ref: http://www.bicyclecards.com/how-to-play/blackjack/
@@ -128,43 +128,125 @@ class BlackjackEnv(gym.Env):
 
         self.render_mode = render_mode
 
-    def step(self, action):
-        assert self.action_space.contains(action)
-        if action:  # hit: add a card to players hand and return
-            self.player.append(draw_card(self.np_random))
-            if is_bust(self.player):
-                terminated = True
-                reward = -1.0
-            else:
-                terminated = False
-                reward = 0.0
-        else:  # stick: play out the dealers hand, and score
-            terminated = True
-            while sum_hand(self.dealer) < 17:
-                self.dealer.append(draw_card(self.np_random))
-            reward = cmp(score(self.player), score(self.dealer))
-            if self.sab and is_natural(self.player) and not is_natural(self.dealer):
-                # Player automatically wins. Rules consistent with S&B
-                reward = 1.0
-            elif not self.sab and self.natural and is_natural(self.player) and reward == 1.0:
-                # Natural gives extra points, but doesn't autowin. Legacy implementation
-                reward = 1.5
-
-        if self.render_mode == "human":
-            self.render()
-        return self._get_obs(), reward, terminated, False, {}
+        # --- NEW: sequential (turn-based) state for player & dealer ---
+        # player_stick / dealer_stick: once True, that side can't take more cards
+        # current_turn: "player" or "dealer", indicates whose action this step() applies to
+        self.player_stick = False
+        self.dealer_stick = False
+        self.current_turn = "player"
 
     def _get_obs(self):
         return (sum_hand(self.player), self.dealer[0], usable_ace(self.player))
+
+    def _final_result(self):
+        """
+        Compute the final reward from the player's perspective after both
+        player and dealer have stuck (and neither has just busted).
+        """
+        r = cmp(score(self.player), score(self.dealer))
+
+        if self.sab and is_natural(self.player) and not is_natural(self.dealer):
+            r = 1.0
+        elif (not self.sab) and self.natural and is_natural(self.player) and r == 1.0:
+            r = 1.5
+
+        return float(r)
+
+    def step(self, action):
+        """
+        Sequential (turn-based) variant:
+        - One player and one dealer.
+        - They take turns choosing hit(1) / stick(0) via env.step(action).
+        - Once stick, that side can no longer hit.
+        - Reward is always from the player's perspective.
+        """
+        assert self.action_space.contains(action)
+        assert self.current_turn in ("player", "dealer")
+
+        terminated = False
+        reward = 0.0
+
+        # ----- Player's turn -----
+        if self.current_turn == "player":
+            if self.player_stick:
+                raise RuntimeError("Player has already stuck and cannot act again.")
+
+            if action:  # hit
+                self.player.append(draw_card(self.np_random))
+                if is_bust(self.player):
+                    # Player busts immediately and loses
+                    terminated = True
+                    reward = -1.0
+                else:
+                    # Game continues, turn passes to dealer
+                    reward = 0.0
+                    self.current_turn = "dealer"
+            else:  # stick
+                self.player_stick = True
+                if self.dealer_stick:
+                    # Both have stuck -> resolve outcome
+                    terminated = True
+                    reward = self._final_result()
+                else:
+                    # Dealer still active -> pass turn
+                    self.current_turn = "dealer"
+
+        # ----- Dealer's turn -----
+        else:  # self.current_turn == "dealer"
+            if self.dealer_stick:
+                raise RuntimeError("Dealer has already stuck and cannot act again.")
+
+            if action:  # hit
+                self.dealer.append(draw_card(self.np_random))
+                if is_bust(self.dealer):
+                    # Dealer busts -> player wins
+                    terminated = True
+                    reward = 1.0
+                else:
+                    # Game continues, turn passes to player
+                    reward = 0.0
+                    self.current_turn = "player"
+            else:  # stick
+                self.dealer_stick = True
+                if self.player_stick:
+                    # Both have stuck -> resolve outcome
+                    terminated = True
+                    reward = self._final_result()
+                else:
+                    # Player still active -> pass turn
+                    self.current_turn = "player"
+
+        if self.render_mode == "human":
+            self.render()
+
+        obs = self._get_obs()
+        info = {
+            "current_turn": self.current_turn,
+            "player_stick": self.player_stick,
+            "dealer_stick": self.dealer_stick,
+        }
+        return obs, reward, terminated, False, info
 
     def reset(
         self,
         seed: Optional[int] = None,
         options: Optional[dict] = None,
     ):
+        """
+        Reset the environment.
+
+        Also resets the turn-based flags so that:
+        - player starts first,
+        - neither side has stuck at the beginning.
+        """
         super().reset(seed=seed)
         self.dealer = draw_hand(self.np_random)
         self.player = draw_hand(self.np_random)
+
+        # Reset sequential-game state
+        self.player_stick = False
+        self.dealer_stick = False
+        self.current_turn = "player"
 
         _, dealer_card_value, _ = self._get_obs()
 
@@ -180,7 +262,7 @@ class BlackjackEnv(gym.Env):
 
         if self.render_mode == "human":
             self.render()
-        return self._get_obs(), {}
+        return self._get_obs(), {"current_turn": self.current_turn}
 
     def render(self):
         if self.render_mode is None:
