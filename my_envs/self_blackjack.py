@@ -4,6 +4,7 @@ import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
 from gymnasium.error import DependencyNotInstalled
+from random import uniform
 
 
 def cmp(a, b):
@@ -116,7 +117,10 @@ class BlackjackEnv(gym.Env):
     def __init__(self, render_mode: Optional[str] = None, natural=False, sab=False):
         self.action_space = spaces.Discrete(2)
         self.observation_space = spaces.Tuple(
-            (spaces.Discrete(32), spaces.Discrete(11), spaces.Discrete(2))
+            (
+                spaces.Tuple((spaces.Discrete(32), spaces.Discrete(11), spaces.Discrete(2))),
+                spaces.Tuple((spaces.Discrete(32), spaces.Discrete(11), spaces.Discrete(2))),
+            )
         )
 
         # Flag to payout 1.5 on a "natural" blackjack win, like casino rules
@@ -133,10 +137,22 @@ class BlackjackEnv(gym.Env):
         # current_turn: "player" or "dealer", indicates whose action this step() applies to
         self.player_stick = False
         self.dealer_stick = False
-        self.current_turn = "player"
+
+        # Get a random number between 0 and 1
+        sample = uniform(0, 1)
+
+        # If the number is between [0.5,1.0], player starts
+        if sample >= 0.5:
+            self.current_turn = "player"
+
+        # If the number is between [0.0,0.5], dealer starts
+        elif sample < 0.5:
+            self.current_turn = "dealer"
 
     def _get_obs(self):
-        return (sum_hand(self.player), self.dealer[0], usable_ace(self.player))
+        player_obs = (sum_hand(self.player), self.dealer[0], usable_ace(self.player))
+        dealer_obs = sum_hand(self.dealer), self.player[0], usable_ace(self.dealer)
+        return (player_obs, dealer_obs)
 
     def _final_result(self):
         """
@@ -168,9 +184,6 @@ class BlackjackEnv(gym.Env):
 
         # ----- Player's turn -----
         if self.current_turn == "player":
-            if self.player_stick:
-                raise RuntimeError("Player has already stuck and cannot act again.")
-
             if action:  # hit
                 self.player.append(draw_card(self.np_random))
                 if is_bust(self.player):
@@ -180,7 +193,9 @@ class BlackjackEnv(gym.Env):
                 else:
                     # Game continues, turn passes to dealer
                     reward = 0.0
-                    self.current_turn = "dealer"
+                    # If the dealer has not stood, change turns
+                    if not self.dealer_stick:
+                        self.current_turn = "dealer"
             else:  # stick
                 self.player_stick = True
                 if self.dealer_stick:
@@ -193,9 +208,6 @@ class BlackjackEnv(gym.Env):
 
         # ----- Dealer's turn -----
         else:  # self.current_turn == "dealer"
-            if self.dealer_stick:
-                raise RuntimeError("Dealer has already stuck and cannot act again.")
-
             if action:  # hit
                 self.dealer.append(draw_card(self.np_random))
                 if is_bust(self.dealer):
@@ -203,9 +215,11 @@ class BlackjackEnv(gym.Env):
                     terminated = True
                     reward = 1.0
                 else:
-                    # Game continues, turn passes to player
+                    # Game continues
                     reward = 0.0
-                    self.current_turn = "player"
+                    # If the player has not stood, change turns
+                    if not self.player_stick:
+                        self.current_turn = "player"
             else:  # stick
                 self.dealer_stick = True
                 if self.player_stick:
@@ -246,9 +260,20 @@ class BlackjackEnv(gym.Env):
         # Reset sequential-game state
         self.player_stick = False
         self.dealer_stick = False
-        self.current_turn = "player"
 
-        _, dealer_card_value, _ = self._get_obs()
+        # Get a random number between 0 and 1
+        sample = uniform(0, 1)
+
+        # If the number is between [0.5,1.0], player starts
+        if sample >= 0.5:
+            self.current_turn = "player"
+
+        # If the number is between [0.0,0.5], dealer starts
+        elif sample < 0.5:
+            self.current_turn = "dealer"
+
+        obs = self._get_obs()
+        dealer_card_value = obs[0][1]
 
         suits = ["C", "D", "H", "S"]
         self.dealer_top_card_suit = self.np_random.choice(suits)
