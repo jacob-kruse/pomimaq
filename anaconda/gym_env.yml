@@ -40,5 +40,6 @@ dependencies:
       - farama-notifications==0.0.4
       - gymnasium==1.2.2
       - numpy==2.3.4
+      - pygame==2.6.1
       - typing-extensions==4.15.0
 prefix: /home/jkruse/anaconda3/envs/gym

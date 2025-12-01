@@ -5,10 +5,12 @@ This script starts the gym environment for Blackjack and simulates actions
 """
 
 import my_envs
+import warnings
 import gymnasium as gym
 
+warnings.filterwarnings("ignore", message="pkg_resources is deprecated as an API")
 
-env = gym.make("blackjack-v1")
+env = gym.make("blackjack-v1", render_mode="human")
 
 obs, info = env.reset()
 
@@ -38,6 +40,7 @@ for _ in range(15):
         if action == 0:
             dealer_stick = True
     obs, reward, terminated, truncated, info = env.step(action)
+    env.render()
     print(
         "\033[4mObservations\033[0m\n"
         f"Player Sum: {obs[0][0]} ; Dealer Showing Card: {obs[0][1]}\n"
@@ -45,4 +48,5 @@ for _ in range(15):
     )
 
     if terminated or truncated:
+        input('\nPress "Enter" to close window')
         break
