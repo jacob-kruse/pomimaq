@@ -6,6 +6,7 @@ This script starts the gym environment for Blackjack and simulates actions
 
 import my_envs
 import warnings
+from time import sleep
 import gymnasium as gym
 
 warnings.filterwarnings("ignore", message="pkg_resources is deprecated as an API")
@@ -47,6 +48,7 @@ for _ in range(15):
         f"Dealer Sum: {obs[1][0]} ; Player Showing Card: {obs[1][1]}"
     )
 
+    sleep(6.0)
     if terminated or truncated:
         input('\nPress "Enter" to close window')
         break

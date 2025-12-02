@@ -132,6 +132,9 @@ class BlackjackEnv(gym.Env):
 
         self.render_mode = render_mode
 
+        self.terminated = False
+        self.reward = 0.0
+
         # --- NEW: sequential (turn-based) state for player & dealer ---
         # player_stick / dealer_stick: once True, that side can't take more cards
         # current_turn: "player" or "dealer", indicates whose action this step() applies to
@@ -178,21 +181,28 @@ class BlackjackEnv(gym.Env):
         """
         assert self.action_space.contains(action)
         assert self.current_turn in ("player", "dealer")
-
-        terminated = False
-        reward = 0.0
+        suits = ["C", "D", "H", "S"]
 
         # ----- Player's turn -----
         if self.current_turn == "player":
             if action:  # hit
-                self.player.append(draw_card(self.np_random))
+                card = draw_card(self.np_random)
+                self.player.append(card)
+                suit = self.np_random.choice(suits)
+                if card == 1:
+                    card_str = "A"
+                elif card == 10:
+                    card_str = self.np_random.choice(["J", "Q", "K"])
+                else:
+                    card_str = str(card)
+                self.player_cards.append([suit, card_str])
                 if is_bust(self.player):
                     # Player busts immediately and loses
-                    terminated = True
-                    reward = -1.0
+                    self.terminated = True
+                    self.reward = -1.0
                 else:
                     # Game continues, turn passes to dealer
-                    reward = 0.0
+                    self.reward = 0.0
                     # If the dealer has not stood, change turns
                     if not self.dealer_stick:
                         self.current_turn = "dealer"
@@ -200,8 +210,8 @@ class BlackjackEnv(gym.Env):
                 self.player_stick = True
                 if self.dealer_stick:
                     # Both have stuck -> resolve outcome
-                    terminated = True
-                    reward = self._final_result()
+                    self.terminated = True
+                    self.reward = self._final_result()
                 else:
                     # Dealer still active -> pass turn
                     self.current_turn = "dealer"
@@ -209,14 +219,23 @@ class BlackjackEnv(gym.Env):
         # ----- Dealer's turn -----
         else:  # self.current_turn == "dealer"
             if action:  # hit
-                self.dealer.append(draw_card(self.np_random))
+                card = draw_card(self.np_random)
+                self.dealer.append(card)
+                suit = self.np_random.choice(suits)
+                if card == 1:
+                    card_str = "A"
+                elif card == 10:
+                    card_str = self.np_random.choice(["J", "Q", "K"])
+                else:
+                    card_str = str(card)
+                self.dealer_cards.append([suit, card_str])
                 if is_bust(self.dealer):
                     # Dealer busts -> player wins
-                    terminated = True
-                    reward = 1.0
+                    self.terminated = True
+                    self.reward = 1.0
                 else:
                     # Game continues
-                    reward = 0.0
+                    self.reward = 0.0
                     # If the player has not stood, change turns
                     if not self.player_stick:
                         self.current_turn = "player"
@@ -224,8 +243,8 @@ class BlackjackEnv(gym.Env):
                 self.dealer_stick = True
                 if self.player_stick:
                     # Both have stuck -> resolve outcome
-                    terminated = True
-                    reward = self._final_result()
+                    self.terminated = True
+                    self.reward = self._final_result()
                 else:
                     # Player still active -> pass turn
                     self.current_turn = "player"
@@ -239,7 +258,7 @@ class BlackjackEnv(gym.Env):
             "player_stick": self.player_stick,
             "dealer_stick": self.dealer_stick,
         }
-        return obs, reward, terminated, False, info
+        return obs, self.reward, self.terminated, False, info
 
     def reset(
         self,
@@ -272,18 +291,28 @@ class BlackjackEnv(gym.Env):
         elif sample < 0.5:
             self.current_turn = "dealer"
 
-        obs = self._get_obs()
-        dealer_card_value = obs[0][1]
-
+        self.player_cards = []
+        self.dealer_cards = []
         suits = ["C", "D", "H", "S"]
-        self.dealer_top_card_suit = self.np_random.choice(suits)
 
-        if dealer_card_value == 1:
-            self.dealer_top_card_value_str = "A"
-        elif dealer_card_value == 10:
-            self.dealer_top_card_value_str = self.np_random.choice(["J", "Q", "K"])
-        else:
-            self.dealer_top_card_value_str = str(dealer_card_value)
+        for card in self.player:
+            suit = self.np_random.choice(suits)
+            if card == 1:
+                card_str = "A"
+            elif card == 10:
+                card_str = self.np_random.choice(["J", "Q", "K"])
+            else:
+                card_str = str(card)
+            self.player_cards.append([suit, card_str])
+        for card in self.dealer:
+            suit = self.np_random.choice(suits)
+            if card == 1:
+                card_str = "A"
+            elif card == 10:
+                card_str = self.np_random.choice(["J", "Q", "K"])
+            else:
+                card_str = str(card)
+            self.dealer_cards.append([suit, card_str])
 
         if self.render_mode == "human":
             self.render()
@@ -306,9 +335,9 @@ class BlackjackEnv(gym.Env):
         obs = self._get_obs()
         player_sum, dealer_card_value, usable_ace = obs[0][0], obs[0][1], obs[0][2]
         screen_width, screen_height = 600, 500
-        card_img_height = screen_height // 3
+        card_img_height = screen_height // 4
         card_img_width = int(card_img_height * 142 / 197)
-        spacing = screen_height // 20
+        spacing = screen_height // 24
 
         bg_color = (7, 99, 36)
         white = (255, 255, 255)
@@ -338,49 +367,82 @@ class BlackjackEnv(gym.Env):
             return font
 
         small_font = get_font(os.path.join("font", "Minecraft.ttf"), screen_height // 15)
-        dealer_text = small_font.render("Dealer: " + str(dealer_card_value), True, white)
-        dealer_text_rect = self.screen.blit(dealer_text, (spacing, spacing))
+
+        if not self.terminated:
+            turn = "Player" if self.current_turn == "player" else "Dealer"
+            turn_text = small_font.render(f"Current Turn: {turn}", True, white)
+            turn_text_rect = self.screen.blit(turn_text, (screen_width // 2 - turn_text.get_width() // 2, spacing))
+        else:
+            winner = None
+            if self.reward == 1.0:
+                winner = "Player"
+            elif self.reward == -1.0:
+                winner = "Dealer"
+            if winner:
+                turn_text = small_font.render(f"{winner} Wins", True, white)
+                turn_text_rect = self.screen.blit(turn_text, (screen_width // 2 - turn_text.get_width() // 2, spacing))
+            else:
+                turn_text = small_font.render("Draw", True, white)
+                turn_text_rect = self.screen.blit(turn_text, (screen_width // 2 - turn_text.get_width() // 2, spacing))
+
+        if not self.terminated:
+            dealer_text = small_font.render(f"Dealer: {dealer_card_value}", True, white)
+        elif self.terminated:
+            dealer_text = small_font.render(f"Dealer: {sum_hand(self.dealer)}", True, white)
+        dealer_text_rect = self.screen.blit(dealer_text, (spacing, turn_text_rect.bottom + spacing))
 
         def scale_card_img(card_img):
             return pygame.transform.scale(card_img, (card_img_width, card_img_height))
 
-        dealer_card_img = scale_card_img(
-            get_image(
-                os.path.join(
-                    "img",
-                    f"{self.dealer_top_card_suit}{self.dealer_top_card_value_str}.png",
+        dealer_width = len(self.dealer_cards) * card_img_width + (len(self.dealer_cards) - 1) * spacing
+        for card in self.dealer_cards:
+            card_index = self.dealer_cards.index(card)
+            if (card_index > 0 and self.terminated) or card_index == 0:
+                dealer_card_img = scale_card_img(
+                    get_image(
+                        os.path.join(
+                            "img",
+                            f"{card[0]}{card[1]}.png",
+                        )
+                    )
                 )
-            )
-        )
-        dealer_card_rect = self.screen.blit(
-            dealer_card_img,
-            (
-                screen_width // 2 - card_img_width - spacing // 2,
-                dealer_text_rect.bottom + spacing,
-            ),
-        )
+                dealer_card_rect = self.screen.blit(
+                    dealer_card_img,
+                    (
+                        (screen_width - dealer_width) // 2 + self.dealer_cards.index(card) * (card_img_width + spacing),
+                        dealer_text_rect.bottom + spacing,
+                    ),
+                )
+            else:
+                hidden_card_img = scale_card_img(get_image(os.path.join("img", "Card.png")))
+                self.screen.blit(
+                    hidden_card_img,
+                    (
+                        (screen_width - dealer_width) // 2 + card_index * (card_img_width + spacing),
+                        dealer_text_rect.bottom + spacing,
+                    ),
+                )
 
-        hidden_card_img = scale_card_img(get_image(os.path.join("img", "Card.png")))
-        self.screen.blit(
-            hidden_card_img,
-            (
-                screen_width // 2 + spacing // 2,
-                dealer_text_rect.bottom + spacing,
-            ),
-        )
-
-        player_text = small_font.render("Player", True, white)
+        player_text = small_font.render(f"Player: {player_sum}", True, white)
         player_text_rect = self.screen.blit(player_text, (spacing, dealer_card_rect.bottom + 1.5 * spacing))
 
-        large_font = get_font(os.path.join("font", "Minecraft.ttf"), screen_height // 6)
-        player_sum_text = large_font.render(str(player_sum), True, white)
-        player_sum_text_rect = self.screen.blit(
-            player_sum_text,
-            (
-                screen_width // 2 - player_sum_text.get_width() // 2,
-                player_text_rect.bottom + spacing,
-            ),
-        )
+        player_width = len(self.player_cards) * card_img_width + (len(self.player_cards) - 1) * spacing
+        for card in self.player_cards:
+            player_card_img = scale_card_img(
+                get_image(
+                    os.path.join(
+                        "img",
+                        f"{card[0]}{card[1]}.png",
+                    )
+                )
+            )
+            player_card_rect = self.screen.blit(
+                player_card_img,
+                (
+                    (screen_width - player_width) // 2 + self.player_cards.index(card) * (card_img_width + spacing),
+                    player_text_rect.bottom + spacing,
+                ),
+            )
 
         if usable_ace:
             usable_ace_text = small_font.render("usable ace", True, white)
@@ -388,7 +450,7 @@ class BlackjackEnv(gym.Env):
                 usable_ace_text,
                 (
                     screen_width // 2 - usable_ace_text.get_width() // 2,
-                    player_sum_text_rect.bottom + spacing // 2,
+                    player_card_rect.bottom + card_img_height + spacing // 2,
                 ),
             )
         if self.render_mode == "human":
