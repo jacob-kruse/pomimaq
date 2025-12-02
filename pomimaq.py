@@ -5,7 +5,6 @@ This script describes the Partially Observable Minimax-Q Algorithm
 """
 
 import numpy as np
-from math import log10
 from random import uniform
 from scipy.optimize import linprog
 
@@ -13,21 +12,17 @@ from scipy.optimize import linprog
 def main():
     # Define variables to be passed to Class
     alpha = 1.0
-    decay = 0.01 ** (1 / (10**6))
+    decay = 0.01 ** (1 / (10**6))  # Chosen so that alpha is 0.01 after a million cycles
     gamma = 0.99
     explore = 0.2
+    learning = True
 
     # Initialize POMIMAQ Class
-    pomimaq = POMIMAQ(alpha, decay, gamma, explore)
-
-    # Testing for linear programming
-    pomimaq.Q[1, 9, 0] = [[0.2, 0.9], [0.8, 0.7]]
-    pomimaq.learn([1, 9, 0], [11, 9, 0], 1, 0, 0)
-    print(pomimaq.Q[1, 9, 0])
+    pomimaq = POMIMAQ(alpha, decay, gamma, explore, learning)
 
 
 class POMIMAQ:
-    def __init__(self, alpha=1.0, decay=(0.01 ** (1 / (10**6))), gamma=0.99, explore=0.2):
+    def __init__(self, alpha=1.0, decay=(0.01 ** (1 / (10**6))), gamma=0.99, explore=0.2, learning=True):
         # Number of possible sums [2-31]  ## (Subtract sum by 2 to get index)
         num_sums = 30
         # Number of possible shown cards [1-10]  ## (Subtract show by 1 to get index)
@@ -60,19 +55,21 @@ class POMIMAQ:
         self.gamma = gamma
         # Probability to explore an action that is not the policy's
         self.explore = explore
+        # Flag that determines if we are in the learning phase
+        self.learning = learning
 
     def choose_action(self, state):
         # Get a random decimal number between 0 and 1 for exploration and action choices
         explore_sample = uniform(0, 1)
         action_sample = uniform(0, 1)
 
-        # If the sampled decimal is between 0 and the probability to explore
-        if explore_sample < self.explore:
+        # If we're in the learning phase and the sample is between 0 and the probability to explore
+        if self.learning and explore_sample < self.explore:
             # Sample an action randomly
             action = "Hit" if action_sample > 0.5 else "Stand"
 
-        # If the sampled decimal is not between 0 and the probability to explore
-        elif explore_sample >= self.explore:
+        # In all other cases
+        else:
             # Get the action proabilities from the policy
             action_probs = self.PI[state[0]][state[1]][state[2]]
 
@@ -114,14 +111,18 @@ class POMIMAQ:
         # Solve using linear programming function
         res = linprog(c, A_ub=A_ub, b_ub=b_ub, A_eq=A_eq, b_eq=b_eq, bounds=bounds)
 
-        # Printing for testing (JK)
-        print(res)
+        # If the linear programming succeeded
+        if res.success:
+            # Update the policy at the current state with the optimal action probabilities
+            self.PI[s[0], s[1], s[2]] = res.x[1:]
 
-        # Update the policy at the current state with the optimal action probabilities
-        self.PI[s[0], s[1], s[2]] = res.x[:1]
+            # Update the value function at the current state with the minimum value
+            self.V[s[0], s[1], s[2]] = res.x[0]
 
-        # Update the value function at the current state with the minimum value
-        self.V[s_[0], s_[1], s_[2]] = res.x[0]
+        # If the linear programming failed
+        elif not res.success:
+            # Print the error message
+            print("Linear Programming Failed: %s" % res.message)
 
         # Decay the learning rate
         self.alpha = self.alpha * self.decay
