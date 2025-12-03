@@ -148,6 +148,108 @@ class POMIMAQ:
 
         return converted_state
 
+import numpy as np
+
+
+class QLearningAgent:
+    def __init__(
+        self,
+        lr: float = 0.1,
+        gamma: float = 0.99,
+        epsilon: float = 1.0,
+        epsilon_min: float = 0.05,
+        epsilon_decay: float = 0.995,
+        n_player_sum: int = 32,
+        n_opponent_card: int = 11,
+        n_usable_ace: int = 2,
+        n_actions: int = 2,
+    ):
+        """
+        - self_sum:            0..31
+        - opponent_card:       0..10  (store the raw value from obs[1])
+        - usable_ace:          0 or 1
+        - action:              0 = stick, 1 = hit
+        """
+        self.lr = lr
+        self.gamma = gamma
+        self.epsilon = epsilon
+        self.epsilon_min = epsilon_min
+        self.epsilon_decay = epsilon_decay
+
+        self.n_player_sum = n_player_sum
+        self.n_opponent_card = n_opponent_card
+        self.n_usable_ace = n_usable_ace
+        self.n_actions = n_actions
+
+        # Initialize Q-table with zeros
+        self.Q = np.zeros(
+            (n_player_sum, n_opponent_card, n_usable_ace, n_actions),
+            dtype=np.float32,
+        )
+
+    def _obs_to_index(self, obs):
+        """
+        Map observation (self_sum, opp_card, usable_ace) to Q-table indices.
+
+        obs[0]: self_sum          (0..31)
+        obs[1]: opp_card          (0..10)
+        obs[2]: usable_ace        (0/1 or bool)
+        """
+        self_sum, opp_card, usable = obs
+
+        self_sum = int(np.clip(self_sum, 0, self.n_player_sum - 1))
+        opp_card = int(np.clip(opp_card, 0, self.n_opponent_card - 1))
+        usable = int(bool(usable))
+
+        return self_sum, opp_card, usable
+
+    def select_action(self, obs):
+        """
+        Epsilon-greedy action selection.
+        With probability epsilon: choose a random action (exploration).
+        Otherwise: choose argmax_a Q(s, a) (exploitation).
+        """
+        i_sum, i_card, i_ace = self._obs_to_index(obs)
+
+        if np.random.rand() < self.epsilon:
+            return np.random.randint(self.n_actions)
+        else:
+            q_values = self.Q[i_sum, i_card, i_ace, :]
+            return int(np.argmax(q_values))
+
+    def update(self, obs, action, reward, next_obs, done: bool):
+        """
+        Standard Q-learning update:
+        target = r + gamma * max_a' Q(s', a')    if not done
+        target = r                               if done
+        """
+        i_sum, i_card, i_ace = self._obs_to_index(obs)
+        a = int(action)
+
+        q_sa = self.Q[i_sum, i_card, i_ace, a]
+
+        if done:
+            target = reward
+        else:
+            n_sum, n_card, n_ace = self._obs_to_index(next_obs)
+            next_q = self.Q[n_sum, n_card, n_ace, :]
+            target = reward + self.gamma * np.max(next_q)
+
+        self.Q[i_sum, i_card, i_ace, a] = q_sa + self.lr * (target - q_sa)
+
+    def decay_epsilon(self):
+        """
+        Decay epsilon after each step or episode.
+        """
+        self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
+
+    def set_epsilon(self, value: float):
+        """
+        Manually set epsilon if needed (e.g., for evaluation).
+        """
+        self.epsilon = float(value)
+
+
 
 if __name__ == "__main__":
     main()
