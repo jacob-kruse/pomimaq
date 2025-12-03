@@ -192,7 +192,7 @@ class BlackjackEnv(gym.Env):
                 if card == 1:
                     card_str = "A"
                 elif card == 10:
-                    card_str = self.np_random.choice(["J", "Q", "K"])
+                    card_str = self.np_random.choice(["J", "Q", "K", "T"])
                 else:
                     card_str = str(card)
                 self.player_cards.append([suit, card_str])
@@ -225,7 +225,7 @@ class BlackjackEnv(gym.Env):
                 if card == 1:
                     card_str = "A"
                 elif card == 10:
-                    card_str = self.np_random.choice(["J", "Q", "K"])
+                    card_str = self.np_random.choice(["J", "Q", "K", "T"])
                 else:
                     card_str = str(card)
                 self.dealer_cards.append([suit, card_str])
@@ -280,6 +280,9 @@ class BlackjackEnv(gym.Env):
         self.player_stick = False
         self.dealer_stick = False
 
+        self.terminated = False
+        self.reward = 0.0
+
         # Get a random number between 0 and 1
         sample = uniform(0, 1)
 
@@ -300,7 +303,7 @@ class BlackjackEnv(gym.Env):
             if card == 1:
                 card_str = "A"
             elif card == 10:
-                card_str = self.np_random.choice(["J", "Q", "K"])
+                card_str = self.np_random.choice(["J", "Q", "K", "T"])
             else:
                 card_str = str(card)
             self.player_cards.append([suit, card_str])
@@ -309,7 +312,7 @@ class BlackjackEnv(gym.Env):
             if card == 1:
                 card_str = "A"
             elif card == 10:
-                card_str = self.np_random.choice(["J", "Q", "K"])
+                card_str = self.np_random.choice(["J", "Q", "K", "T"])
             else:
                 card_str = str(card)
             self.dealer_cards.append([suit, card_str])
@@ -395,8 +398,7 @@ class BlackjackEnv(gym.Env):
             return pygame.transform.scale(card_img, (card_img_width, card_img_height))
 
         dealer_width = len(self.dealer_cards) * card_img_width + (len(self.dealer_cards) - 1) * spacing
-        for card in self.dealer_cards:
-            card_index = self.dealer_cards.index(card)
+        for card_index, card in enumerate(self.dealer_cards):
             if (card_index > 0 and self.terminated) or card_index == 0:
                 dealer_card_img = scale_card_img(
                     get_image(
@@ -409,7 +411,7 @@ class BlackjackEnv(gym.Env):
                 dealer_card_rect = self.screen.blit(
                     dealer_card_img,
                     (
-                        (screen_width - dealer_width) // 2 + self.dealer_cards.index(card) * (card_img_width + spacing),
+                        (screen_width - dealer_width) // 2 + card_index * (card_img_width + spacing),
                         dealer_text_rect.bottom + spacing,
                     ),
                 )
@@ -427,7 +429,7 @@ class BlackjackEnv(gym.Env):
         player_text_rect = self.screen.blit(player_text, (spacing, dealer_card_rect.bottom + 1.5 * spacing))
 
         player_width = len(self.player_cards) * card_img_width + (len(self.player_cards) - 1) * spacing
-        for card in self.player_cards:
+        for card_index, card in enumerate(self.player_cards):
             player_card_img = scale_card_img(
                 get_image(
                     os.path.join(
@@ -439,7 +441,7 @@ class BlackjackEnv(gym.Env):
             player_card_rect = self.screen.blit(
                 player_card_img,
                 (
-                    (screen_width - player_width) // 2 + self.player_cards.index(card) * (card_img_width + spacing),
+                    (screen_width - player_width) // 2 + card_index * (card_img_width + spacing),
                     player_text_rect.bottom + spacing,
                 ),
             )

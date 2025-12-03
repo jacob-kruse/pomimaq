@@ -57,28 +57,37 @@ class POMIMAQ:
         self.explore = explore
         # Flag that determines if we are in the learning phase
         self.learning = learning
+        # Tracks number of steps for learning
+        self.steps = 0
 
     def choose_action(self, state):
+        # Convert the passed state
+        state = self.convert_state(state)
+
         # Get a random decimal number between 0 and 1 for exploration and action choices
         explore_sample = uniform(0, 1)
         action_sample = uniform(0, 1)
 
         # If we're in the learning phase and the sample is between 0 and the probability to explore
         if self.learning and explore_sample < self.explore:
-            # Sample an action randomly
-            action = "Hit" if action_sample > 0.5 else "Stand"
+            # Sample an action randomly (Stand = 0, Hit = 1)
+            action = 1 if action_sample > 0.5 else 0
 
         # In all other cases
         else:
             # Get the action proabilities from the policy
-            action_probs = self.PI[state[0]][state[1]][state[2]]
+            action_probs = self.PI[state[0], state[1], state[2]]
 
-            # Sample an action with the action probabilities
-            action = "Hit" if action_sample > action_probs[0] else "Stand"
+            # Sample an action with the action probabilities (Stand = 0, Hit = 1)
+            action = 1 if action_sample > action_probs[0] else 0
 
         return action
 
     def learn(self, s, s_, a, o_a, r):
+        # Convert the passed states to indexable equivalents
+        s = self.convert_state(s)
+        s_ = self.convert_state(s_)
+
         # Update Q-function for the state and actions using the observed reward
         self.Q[s[0], s[1], s[2], a, o_a] = (1 - self.alpha) * self.Q[s[0], s[1], s[2], a, o_a] + self.alpha * (
             r + self.gamma * self.V[s_[0], s_[1], s_[2]]
@@ -89,7 +98,7 @@ class POMIMAQ:
         c = np.zeros(3)
         c[0] = -1.0
 
-        # Define left-side of inequality, A_ub = [num_actions, num_actions + 1]
+        # Define left-side of inequality, A_ub = [num_actions, num_opp_actions + 1]
         A_ub = np.ones((2, 3))
         # Skipping the first column, assign the transpose of the Q-function to the matrix
         A_ub[:, 1:] = -self.Q[s[0], s[1], s[2]].T
@@ -97,7 +106,7 @@ class POMIMAQ:
         # Define right-side of inequality, b_ub = [num_actions]
         b_ub = np.zeros(2)
 
-        # Define left-side of equality, column vector of size (num_actions + 1)
+        # Define left-side of equality, column vector of size (num_opp_actions + 1)
         A_eq = np.ones((1, 3))
         # Define first value of column vector as 0
         A_eq[0, 0] = 0
@@ -126,6 +135,18 @@ class POMIMAQ:
 
         # Decay the learning rate
         self.alpha = self.alpha * self.decay
+
+        # Increment step counter
+        self.steps += 1
+
+    def convert_state(self, state):
+        # Convert True or False for "usable_ace" to 1 or 0
+        usable_ace = 0 if not state[2] else 1
+
+        # Subtract 2 from the player sum and 1 from dealers card to get indexes
+        converted_state = [(state[0] - 2), (state[1] - 1), usable_ace]
+
+        return converted_state
 
 
 if __name__ == "__main__":
