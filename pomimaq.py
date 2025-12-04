@@ -60,6 +60,44 @@ class POMIMAQ:
         # Tracks number of steps for learning
         self.steps = 0
 
+                # ---------------- Belief Model ----------------
+        # win_counts[s, a]: number of times action 'a' led to a winning terminal outcome in state 's'
+        # play_counts[s, a]: total number of times action 'a' was taken in state 's'
+        # belief[s, a] = win_counts / play_counts = estimated probability of winning if action 'a' is chosen in state 's'
+        self.win_counts = np.zeros((num_sums, num_shows, usable_ace, num_actions), dtype=np.float32)
+        # Start at 1 to avoid division by zero and allow belief to converge from a neutral prior
+        self.play_counts = np.ones((num_sums, num_shows, usable_ace, num_actions), dtype=np.float32)
+        self.belief = self.win_counts / self.play_counts
+
+        # Weight for belief-based shaping in the Q target.
+        # Set to 0.0 to disable shaping, increase gradually (e.g., 0.1 ~ 0.5).
+        self.belief_weight = 0.2
+
+    def update_belief(self, state, a, reward):
+        """
+        Update the empirical belief P(win | state, action).
+        This function assumes reward > 0 indicates a win.
+        """
+        state = self.convert_state(state)
+        i, j, k = state
+        a = int(a)
+
+        win = 1.0 if reward > 0 else 0.0
+        self.win_counts[i, j, k, a] += win
+        self.play_counts[i, j, k, a] += 1.0
+        self.belief[i, j, k, a] = self.win_counts[i, j, k, a] / self.play_counts[i, j, k, a]
+
+    # ---------------- Belief Query Function ----------------
+    def get_belief(self, state, a):
+        """
+        Return the current estimated probability of winning
+        when taking action 'a' in the given blackjack state.
+        """
+        state = self.convert_state(state)
+        i, j, k = state
+        return float(self.belief[i, j, k, int(a)])
+
+
     def choose_action(self, state):
         # Convert the passed state
         state = self.convert_state(state)
@@ -83,14 +121,14 @@ class POMIMAQ:
 
         return action
 
-    def learn(self, s, s_, a, o_a, r):
+    def learn(self, s, s_, a, o_a, r, done =False):
         # Convert the passed states to indexable equivalents
         s = self.convert_state(s)
         s_ = self.convert_state(s_)
 
         # Update Q-function for the state and actions using the observed reward
         self.Q[s[0], s[1], s[2], a, o_a] = (1 - self.alpha) * self.Q[s[0], s[1], s[2], a, o_a] + self.alpha * (
-            r + self.gamma * self.V[s_[0], s_[1], s_[2]]
+            r + self.gamma * self.V[s_[0], s_[1], s_[2]] + self.belief_weight * (self.belief[s[0], s[1], s[2], a] - 0.5)
         )
 
         # Use linear programming to find the min-max action
@@ -133,6 +171,8 @@ class POMIMAQ:
             # Print the error message
             print("Linear Programming Failed: %s" % res.message)
 
+        if done:
+            self.update_belief(s, a, r)
         # Decay the learning rate
         self.alpha = self.alpha * self.decay
 
