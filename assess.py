@@ -24,9 +24,10 @@ def main():
     # agent2 = "MMQ_vs_MMQ_2"
     # agent2 = "Q_vs_Q_2"
 
-    # If "agent1" file is defined and exists, load the previously saved agent Class
+    # If "agent1" file is defined and exists, load the saved agent Class and set "learning" False
     if agent1 and os.path.exists(f"agents/{agent1}.npy"):
         player1 = np.load(f"agents/{agent1}.npy", allow_pickle=True).item()
+        player1.learning = False
 
     # If "agent1" is not defined or if it doesn't exist, return an error
     else:
@@ -38,9 +39,10 @@ def main():
         print("Agent 2 file does not exist")
         return
 
-    # If "agent2" file is defined and exists, load the previously saved agent Class
+    # If "agent2" file is defined and exists, load the saved agent Class and set "learning" False
     elif agent2 and os.path.exists(f"agents/{agent2}.npy"):
         player2 = np.load(f"agents/{agent2}.npy", allow_pickle=True).item()
+        player2.learning = False
 
     # If no "agent2" file is defined, define player 2 as the default policy
     else:

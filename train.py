@@ -69,6 +69,8 @@ def main():
     env = gym.make("blackjack-v1")
     obs, info = env.reset()
 
+    # Define "done" as False initially
+    done = False
     # Define variables for win tracking
     wins, losses, draws = 0, 0, 0
     # Define opponent actions to be Hit initially (Initially Hit since game will continue)
@@ -117,20 +119,25 @@ def main():
             # Execute the chosen action for the current player in the environment
             obs, reward, terminated, truncated, info = env.step(action)
 
+            # If the game has terminated, set "done" to True to do modified update
+            if terminated or truncated:
+                done = True
+
             # If the current player is "dealer", backwards because we called step()
             if info["current_turn"] == "dealer":
                 # Call the learn() function for player1 to process transition
-                player1.learn(prev_obs[0], obs[0], action, opp_action_1, reward)
+                player1.learn(prev_obs[0], obs[0], action, opp_action_1, reward, done)
 
             # If the current player is "player" and agent2 is defined
             if info["current_turn"] == "player" and player2:
                 # Call the learn() function for player2 to process transition
-                player2.learn(prev_obs[1], obs[1], action, opp_action_2, -reward)
+                player2.learn(prev_obs[1], obs[1], action, opp_action_2, -reward, done)
 
             # If the current game has ended
             if terminated or truncated:
-                # Reset the environment
+                # Reset the environment and "done" variable
                 obs, info = env.reset()
+                done = False
 
                 # Increment the wins/losses/draws based on outcome
                 if reward == 1.0:
@@ -155,6 +162,13 @@ def main():
 
                 # Store the previous step to avoid multiple printing and saving
                 prev_step = player1.steps
+
+        # After the loop has finished, set the "learning" flag for player1 to False
+        player1.learning = False
+
+        # If there is an agent for player2, set the "learning" flag for player2 to False
+        if player2:
+            player2.learning = False
 
     # Handle Keyboard Interrupt
     except KeyboardInterrupt:

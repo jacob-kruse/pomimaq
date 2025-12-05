@@ -125,10 +125,22 @@ class POMIMAQ:
         s = self.convert_state(s)
         s_ = self.convert_state(s_)
 
-        # Update Q-function for the state and actions using the observed reward
-        self.Q[s[0], s[1], s[2], a, o_a] = (1 - self.alpha) * self.Q[s[0], s[1], s[2], a, o_a] + self.alpha * (
-            r + self.gamma * self.V[s_[0], s_[1], s_[2]] + self.estimator_weight * (self.win_estimate[s[0], s[1], s[2], a] - 0.5)
-        )
+        # If we are not at a terminal state
+        if not done:
+            # Calculate the target with the reward, discounted value function, and win estimator
+            target = (
+                r
+                + self.gamma * self.V[s_[0], s_[1], s_[2]]
+                + self.estimator_weight * (self.win_estimate[s[0], s[1], s[2], a] - 0.5)
+            )
+
+        # If we are at a terminal state
+        if done:
+            # Calculate the target with only the reward
+            target = r
+
+        # Update Q-function for the state and actions using the target
+        self.Q[s[0], s[1], s[2], a, o_a] = (1 - self.alpha) * self.Q[s[0], s[1], s[2], a, o_a] + self.alpha * target
 
         # Use linear programming to find the min-max action
         # Define c = [v, PI(Stand), PI(Hit)] where v is minimum from pseudo code
@@ -170,8 +182,9 @@ class POMIMAQ:
             # Print the error message
             print("Linear Programming Failed: %s" % res.message)
 
-        if done:
-            self.update_estimator(s, a, r)
+        # Update the estimator
+        self.update_estimator(s, a, r)
+
         # Decay the learning rate
         self.alpha = self.alpha * self.decay
 
