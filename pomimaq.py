@@ -60,7 +60,7 @@ class POMIMAQ:
         # Tracks number of steps for learning
         self.steps = 0
 
-                # ---------------- Belief Model ----------------
+        # ---------------- Belief Model ----------------
         # win_counts[s, a]: number of times action 'a' led to a winning terminal outcome in state 's'
         # play_counts[s, a]: total number of times action 'a' was taken in state 's'
         # belief[s, a] = win_counts / play_counts = estimated probability of winning if action 'a' is chosen in state 's'
@@ -97,7 +97,6 @@ class POMIMAQ:
         i, j, k = state
         return float(self.win_estimate[i, j, k, int(a)])
 
-
     def choose_action(self, state):
         # Convert the passed state
         state = self.convert_state(state)
@@ -121,7 +120,7 @@ class POMIMAQ:
 
         return action
 
-    def learn(self, s, s_, a, o_a, r, done =False):
+    def learn(self, s, s_, a, o_a, r, done=False):
         # Convert the passed states to indexable equivalents
         s = self.convert_state(s)
         s_ = self.convert_state(s_)
@@ -180,15 +179,10 @@ class POMIMAQ:
         self.steps += 1
 
     def convert_state(self, state):
-        # Convert True or False for "usable_ace" to 1 or 0
-        usable_ace = 0 if not state[2] else 1
-
-        # Subtract 2 from the player sum and 1 from dealers card to get indexes
-        converted_state = [(state[0] - 2), (state[1] - 1), usable_ace]
+        # Subtract 2 from the player sum, 1 from dealers card, and convert boolean to get indexes
+        converted_state = [(state[0] - 2), (state[1] - 1), int(state[2])]
 
         return converted_state
-
-import numpy as np
 
 
 class QLearningAgent:
@@ -199,6 +193,7 @@ class QLearningAgent:
         epsilon: float = 1.0,
         epsilon_min: float = 0.05,
         epsilon_decay: float = 0.995,
+        learning: bool = True,
         n_player_sum: int = 32,
         n_opponent_card: int = 11,
         n_usable_ace: int = 2,
@@ -215,6 +210,8 @@ class QLearningAgent:
         self.epsilon = epsilon
         self.epsilon_min = epsilon_min
         self.epsilon_decay = epsilon_decay
+        self.learning = learning
+        self.steps = 0
 
         self.n_player_sum = n_player_sum
         self.n_opponent_card = n_opponent_card
@@ -237,13 +234,13 @@ class QLearningAgent:
         """
         self_sum, opp_card, usable = obs
 
-        self_sum = int(np.clip(self_sum, 0, self.n_player_sum - 1))
+        self_sum = int(np.clip(self_sum, 0, self.n_player_sum - 2))
         opp_card = int(np.clip(opp_card, 0, self.n_opponent_card - 1))
         usable = int(bool(usable))
 
         return self_sum, opp_card, usable
 
-    def select_action(self, obs):
+    def choose_action(self, obs):
         """
         Epsilon-greedy action selection.
         With probability epsilon: choose a random action (exploration).
@@ -251,13 +248,13 @@ class QLearningAgent:
         """
         i_sum, i_card, i_ace = self._obs_to_index(obs)
 
-        if np.random.rand() < self.epsilon:
+        if np.random.rand() < self.epsilon and self.learning:
             return np.random.randint(self.n_actions)
         else:
             q_values = self.Q[i_sum, i_card, i_ace, :]
             return int(np.argmax(q_values))
 
-    def update(self, obs, action, reward, next_obs, done: bool):
+    def learn(self, obs, next_obs, action, opp_action, reward, done=False):
         """
         Standard Q-learning update:
         target = r + gamma * max_a' Q(s', a')    if not done
@@ -277,6 +274,8 @@ class QLearningAgent:
 
         self.Q[i_sum, i_card, i_ace, a] = q_sa + self.lr * (target - q_sa)
 
+        self.steps += 1
+
     def decay_epsilon(self):
         """
         Decay epsilon after each step or episode.
@@ -288,7 +287,6 @@ class QLearningAgent:
         Manually set epsilon if needed (e.g., for evaluation).
         """
         self.epsilon = float(value)
-
 
 
 if __name__ == "__main__":

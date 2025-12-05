@@ -9,25 +9,58 @@ import my_envs
 import warnings
 import numpy as np
 import gymnasium as gym
-from pomimaq import POMIMAQ
+from pomimaq import POMIMAQ, QLearningAgent
 
 
 def main():
-    # If the "MinMax_Q.npy" file does not exist
-    if not os.path.exists("MinMax_Q.npy"):
-        # Define variables to be passed to POMIMAQ Class
-        alpha = 1.0
-        decay = 0.01 ** (1 / (10**6))
-        gamma = 0.99
-        explore = 0.2
-        learning = True
+    # Define number of learning steps to complete training
+    total_steps = 1000000
 
-        # Initialize a new POMIMAQ Class
-        mimaq = POMIMAQ(alpha, decay, gamma, explore, learning)
+    # Define agents: [file name, agent type] ;  None = Default Policy
+    agent1 = ["MMQ_vs_Default", "MMQ"]
+    # agent1 = ["Q_vs_Default", "Q"]
+    # agent1 = ["MMQ_vs_MMQ_1", "MMQ"]
+    # agent1 = ["Q_vs_Q_1", "Q"]
+    agent2 = None
+    # agent2 = ["MMQ_vs_MMQ_2", "MMQ"]
+    # agent2 = ["Q_vs_Q_2", "Q"]
 
+    # If an "agent1" file is defined and does not exist, initialize a new agent Class
+    if agent1 and not os.path.exists(f"agents/{agent1[0]}.npy"):
+        if agent1[1] == "MMQ":
+            player1 = POMIMAQ()
+        elif agent1[1] == "Q":
+            player1 = QLearningAgent()
+        else:
+            print("Wrong type for Agent 1")
+            return
+
+    # If an "agent1" file is defined and exists, load the previously saved agent Class
+    elif agent1 and os.path.exists(f"agents/{agent1[0]}.npy"):
+        player1 = np.load(f"agents/{agent1[0]}.npy", allow_pickle=True).item()
+
+    # If "agent1" is not defined, return an error
     else:
-        # Load the class from the ".npy" file
-        mimaq = np.load("MinMax_Q.npy", allow_pickle=True).item()
+        print("Define Agent for Player 1")
+        return
+
+    # If an "agent2" file is defined and does not exist, initialize a new agent Class
+    if agent2 and not os.path.exists(f"agents/{agent2[0]}.npy"):
+        if agent2[1] == "MMQ":
+            player2 = POMIMAQ()
+        elif agent2[1] == "Q":
+            player2 = QLearningAgent()
+        else:
+            print("Wrong type for Agent 2")
+            return
+
+    # If an "agent2" file is defined and exists, load the previously saved agent Class
+    elif agent2 and os.path.exists(f"agents/{agent2[0]}.npy"):
+        player2 = np.load(f"agents/{agent2[0]}.npy", allow_pickle=True).item()
+
+    # If no "agent2" file is defined, define player 2 as the default policy
+    else:
+        player2 = None
 
     # Suppress meaningless warnings
     warnings.filterwarnings("ignore", message="pkg_resources is deprecated as an API")
@@ -37,89 +70,104 @@ def main():
     obs, info = env.reset()
 
     # Define variables for win tracking
-    total_wins, total_losses, total_draws, wins, losses, draws = 0, 0, 0, 0, 0, 0
+    wins, losses, draws = 0, 0, 0
+    # Define opponent actions to be Hit initially (Initially Hit since game will continue)
+    opp_action_1, opp_action_2 = 1, 1
     # Define previous step variable for logic in periodic print statements
     prev_step = -1
-    # Define opponent action to be -1 (No-op) initially in case player goes first
-    opp_action = 1
+
+    # Print the current training process
+    print(f"\033[1m{agent1[0]}\033[0m")
 
     # Try the following
     try:
-        # Loop while the steps of minmax-q learning algorithm is less than a million
-        while mimaq.steps <= 1000000:
+        # Loop while the steps of player1 is less than the total learning steps defined
+        while player1.steps <= total_steps:
             # If it's the players turn
             if info["current_turn"] == "player":
-                # Call the minmax-q choose_action() function with the current observation
-                action = mimaq.choose_action(obs[0])
+                # Call the choose_action() function with the current observation
+                action = player1.choose_action(obs[0])
+
+                # Assign the action to opp_action for player 2
+                opp_action_2 = action
 
             # If it's the dealers turn
             elif info["current_turn"] == "dealer":
-                # # If the dealer's sum is less than 17, dealer will hit
-                # if obs[1][0]:
-                #     action = 1
+                # If there is an agent for player2
+                if player2:
+                    # Call the choose_action() function with the current observation
+                    action = player2.choose_action(obs[1])
 
-                # # If the dealer's sum is 17 or greater, dealer will stand
-                # else:
-                #     action = 0
+                # Play default policy if no player specified
+                else:
+                    # If the player's sum is less than 17, hit
+                    if obs[1][0] < 17:
+                        action = 1
 
-                # Randomly sample an action
-                action = env.action_space.sample()
+                    # If the player's sum is 17 or greater, stand
+                    else:
+                        action = 0
 
-                # Assign the action to opp_action
-                opp_action = action
+                # Assign the action to opp_action for player 1
+                opp_action_1 = action
 
             # Assign the current observation to prev_obs for storage
-            prev_obs = obs[0]
+            prev_obs = obs
 
             # Execute the chosen action for the current player in the environment
             obs, reward, terminated, truncated, info = env.step(action)
 
-            # If the current player is dealer, backwards because we called step()
+            # If the current player is "dealer", backwards because we called step()
             if info["current_turn"] == "dealer":
-                # Call the learn() function for the minmax-q algorithm to process transition
-                mimaq.learn(prev_obs, obs[0], action, opp_action, reward)
+                # Call the learn() function for player1 to process transition
+                player1.learn(prev_obs[0], obs[0], action, opp_action_1, reward)
+
+            # If the current player is "player" and agent2 is defined
+            if info["current_turn"] == "player" and player2:
+                # Call the learn() function for player2 to process transition
+                player2.learn(prev_obs[1], obs[1], action, opp_action_2, -reward)
 
             # If the current game has ended
             if terminated or truncated:
                 # Reset the environment
                 obs, info = env.reset()
-                # sleep(2.0)
 
                 # Increment the wins/losses/draws based on outcome
                 if reward == 1.0:
                     wins += 1
-                    total_wins += 1
                 elif reward == -1.0:
                     losses += 1
-                    total_losses += 1
                 else:
                     draws += 1
-                    total_draws += 1
 
-            # If learning steps is divisible by 1,000
-            if mimaq.steps % 1000 == 0 and prev_step != mimaq.steps:
+            # If learning steps is divisible by 10,000
+            if player1.steps % 1000 == 0 and prev_step != player1.steps:
                 # Periodic print statements
-                print(f"Step {mimaq.steps}")
+                print(f"Step {player1.steps}")
                 print(f"Wins: {wins}  Losses: {losses}  Differential: {wins-losses}")
-                print(f"Total Wins: {total_wins}  Total Losses: {total_losses}  Total Differential: {total_wins-total_losses}\n")
 
-                # Reset the periodic win tracking variables
-                wins, losses, draws = 0, 0, 0
-                # Store the previous step to avoid multiple printing
-                prev_step = mimaq.steps
+                # Save the player1 class periodically
+                np.save(f"agents/{agent1[0]}", player1)
 
-            # If the steps is divisible by 10,000
-            if mimaq.steps % 10000 == 0:
-                # Save the minmax-q algorithm periodically
-                np.save("MinMax_Q", mimaq)
+                # If there is a player2, save the class
+                if player2:
+                    np.save(f"agents/{agent2[0]}", player2)
+
+                # Store the previous step to avoid multiple printing and saving
+                prev_step = player1.steps
 
     # Handle Keyboard Interrupt
     except KeyboardInterrupt:
-        # Print the number of learning steps for the minmax-q algorithm
-        print(f"\nSteps: {mimaq.steps}")
+        # Print the training process and number of learning steps for the player1 agent
+        print(f"\n\033[1m{agent1[0]}\033[0m")
+        print(f"Steps: {player1.steps}")
 
-        # Save the current state of the minmax-q algorithm
-        np.save("MinMax_Q", mimaq)
+        # Save the current state of player1
+        np.save(f"agents/{agent1[0]}", player1)
+
+        # If an agent is defined for player2, save the current state
+        if player2:
+            np.save(f"agents/{agent2[0]}", player1)
 
 
 if __name__ == "__main__":
