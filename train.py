@@ -17,13 +17,8 @@ def main():
     total_steps = 1000000
 
     # Define agents: [file name, agent type] ;  None = Default Policy
-    agent1 = ["MMQ_vs_Default", "MMQ"]
-    # agent1 = ["Q_vs_Default", "Q"]
-    # agent1 = ["MMQ_vs_MMQ_1", "MMQ"]
-    # agent1 = ["Q_vs_Q_1", "Q"]
-    agent2 = None
-    # agent2 = ["MMQ_vs_MMQ_2", "MMQ"]
-    # agent2 = ["Q_vs_Q_2", "Q"]
+    agent1 = ["MMQ_vs_MMQ2_1", "MMQ"]
+    agent2 = ["MMQ_vs_MMQ2_2", "MMQ2"]
 
     # If an "agent1" file is defined and does not exist, initialize a new agent Class
     if agent1 and not os.path.exists(f"agents/{agent1[0]}.npy"):
@@ -85,8 +80,11 @@ def main():
     try:
         # Loop while the steps of player1 is less than the total learning steps defined
         while player1.steps <= total_steps:
+            # Get the the player who is on the current turn
+            turn = info["current_turn"]
+
             # If it's the players turn
-            if info["current_turn"] == "player":
+            if turn == "player":
                 # Call the choose_action() function with the current observation
                 action = player1.choose_action(obs[0])
 
@@ -94,7 +92,7 @@ def main():
                 opp_action_2 = action
 
             # If it's the dealers turn
-            elif info["current_turn"] == "dealer":
+            elif turn == "dealer":
                 # If there is an agent for player2
                 if player2:
                     # Call the choose_action() function with the current observation
@@ -124,20 +122,21 @@ def main():
                 done = True
 
             # If the current player is "dealer", backwards because we called step()
-            if info["current_turn"] == "dealer":
+            if turn == "player":
                 # Call the learn() function for player1 to process transition
                 player1.learn(prev_obs[0], obs[0], action, opp_action_1, reward, done)
 
             # If the current player is "player" and agent2 is defined
-            if info["current_turn"] == "player" and player2:
+            elif turn == "dealer" and player2:
                 # Call the learn() function for player2 to process transition
                 player2.learn(prev_obs[1], obs[1], action, opp_action_2, -reward, done)
 
             # If the current game has ended
             if terminated or truncated:
-                # Reset the environment and "done" variable
+                # Reset the environment and other variables
                 obs, info = env.reset()
                 done = False
+                opp_action_1, opp_action_2 = 1, 1
 
                 # Increment the wins/losses/draws based on outcome
                 if reward == 1.0:
@@ -148,7 +147,7 @@ def main():
                     draws += 1
 
             # If learning steps is divisible by 10,000
-            if player1.steps % 1000 == 0 and prev_step != player1.steps:
+            if player1.steps % 10000 == 0 and prev_step != player1.steps:
                 # Periodic print statements
                 print(f"Step {player1.steps}")
                 print(f"Wins: {wins}  Losses: {losses}  Differential: {wins-losses}")
@@ -163,12 +162,14 @@ def main():
                 # Store the previous step to avoid multiple printing and saving
                 prev_step = player1.steps
 
-        # After the loop has finished, set the "learning" flag for player1 to False
+        # After the loop has finished, set the "learning" flag for player1 to False and save it
         player1.learning = False
+        np.save(f"agents/{agent1[0]}", player1)
 
-        # If there is an agent for player2, set the "learning" flag for player2 to False
+        # If there is an agent for player2, set the "learning" flag for player2 to False and save
         if player2:
             player2.learning = False
+            np.save(f"agents/{agent2[0]}", player2)
 
     # Handle Keyboard Interrupt
     except KeyboardInterrupt:

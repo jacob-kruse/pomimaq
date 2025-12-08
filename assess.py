@@ -16,13 +16,20 @@ def main():
     total_games = 100000
 
     # Define trained agents simulation and win/loss comparison
-    agent1 = "MMQ_vs_Default"
+    # agent1 = "MMQ_vs_Default"
+    # agent1 = "MMQ2_vs_Default"
     # agent1 = "Q_vs_Default"
     # agent1 = "MMQ_vs_MMQ_1"
     # agent1 = "Q_vs_Q_1"
-    agent2 = None
+    # agent1 = "MMQ_vs_Q_1"
+    # agent1 = "MMQ2_vs_Q_1"
+    agent1 = "MMQ_vs_MMQ2_1"
+    # agent2 = None
     # agent2 = "MMQ_vs_MMQ_2"
     # agent2 = "Q_vs_Q_2"
+    # agent2 = "MMQ_vs_Q_2"
+    # agent2 = "MMQ2_vs_Q_2"
+    agent2 = "MMQ_vs_MMQ2_2"
 
     # If "agent1" file is defined and exists, load the saved agent Class and set "learning" False
     if agent1 and os.path.exists(f"agents/{agent1}.npy"):
